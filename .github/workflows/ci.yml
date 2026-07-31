@@ -30,6 +30,8 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
       - name: Clippy
+        # Lints are enforced on stable; the MSRV job only verifies it builds/tests.
+        if: matrix.rust == 'stable'
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test --all
