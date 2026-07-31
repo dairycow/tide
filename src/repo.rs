@@ -188,3 +188,10 @@ pub fn head_short_sha(repo: &Path) -> Result<String> {
 pub fn has_origin(repo: &Path) -> bool {
     git(repo, &["remote", "get-url", "origin"]).is_ok()
 }
+
+/// Unstage everything (`git -C <repo> reset`), keeping working-tree files. Used
+/// by sync to back out a secret-bearing staging before bailing.
+pub fn reset_index(repo: &Path) -> anyhow::Result<()> {
+    git(repo, &["reset"]).context("git reset")?;
+    Ok(())
+}
