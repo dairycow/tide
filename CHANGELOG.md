@@ -5,6 +5,18 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.2.0] - 2026-07-31
+
+### Changed
+
+- `tide install-skill` now installs only to the cross-tool `~/.agents/skills/tide/`
+  root (read by opencode, Grok, Codex, Gemini). The `agent` argument and the
+  `~/.claude` / `~/.config/opencode` targets are removed. Claude Code does not yet
+  read `~/.agents/` (anthropics/claude-code#66352), so it will not auto-discover
+  the skill until that lands.
+
 ## [0.1.0] - 2026-07-31
 
 Initial public release.
@@ -24,4 +36,6 @@ Initial public release.
 - Dual MIT / Apache-2.0 license.
 - CI (format check, clippy with `-D warnings`, test matrix).
 
+[Unreleased]: https://github.com/dairycow/tide/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/dairycow/tide/releases/tag/v0.2.0
 [0.1.0]: https://github.com/dairycow/tide/releases/tag/v0.1.0
