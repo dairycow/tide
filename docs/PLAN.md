@@ -6,19 +6,19 @@ Tick a box `[ ]` → `[x]` in the SAME commit that completes its task.
 ## Phases
 
 ### Phase 1 — scaffold (sequential foundation)  — base branch
-- [ ] `Cargo.toml` rewritten with the full dep list (see DECISIONS).
-- [ ] `src/main.rs`: `tracing_subscriber` init + `clap` derive `Cli` with one
+- [x] `Cargo.toml` rewritten with the full dep list (see DECISIONS).
+- [x] `src/main.rs`: `tracing_subscriber` init + `clap` derive `Cli` with one
       subcommand per command in the table. Each arm calls `<module>::run(args)`.
       Declare `mod config; mod repo; mod scan; mod diff; mod sync; mod doctor;
       mod install;`.
-- [ ] `src/config.rs`: `Config` struct (serde), load/save to
+- [x] `src/config.rs`: `Config` struct (serde), load/save to
       `~/.config/tide/tide.toml`, tilde + `$HOME` expansion, `Watches { source,
       target }`. `init`, `add`, `rm`, `list` fully implemented here (these own
       config mutation). Path-mapping helper for `source → target`.
-- [ ] STUB every other module (`repo.rs`, `scan.rs`, `diff.rs`, `sync.rs`,
+- [x] STUB every other module (`repo.rs`, `scan.rs`, `diff.rs`, `sync.rs`,
       `doctor.rs`, `install.rs`) with `pub fn run(...) -> anyhow::Result<()> {
       todo!("phase <N>") }` matching the signatures `main.rs` calls.
-- [ ] `skill/SKILL.md` placeholder (1-line) so `include_str!` compiles; install
+- [x] `skill/SKILL.md` placeholder (1-line) so `include_str!` compiles; install
       worker fills it later. (Or use `include_str!` guarded — scaffold's choice,
       but it must COMPILE.)
 - GATE: `cargo build --release && cargo test` green. Commit: `phase 1: scaffold`.
