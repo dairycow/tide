@@ -1,5 +1,5 @@
-use crate::config::{expand_tilde, Config};
-use anyhow::{bail, Context, Result};
+use crate::config::expand_tilde;
+use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 
 const SKILL: &str = include_str!("../skill/SKILL.md");
@@ -11,7 +11,7 @@ const CANDIDATES: &[(&str, &str)] = &[
     ("agents", "~/.agents"),
 ];
 
-pub fn run(_cfg: &Config, agent: Option<String>) -> Result<()> {
+pub fn run(agent: Option<String>) -> Result<()> {
     let targets = select_targets(agent.as_deref())?;
     if targets.is_empty() {
         bail!("no install targets selected");

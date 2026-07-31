@@ -11,7 +11,7 @@ use crate::repo;
 pub struct Finding {
     pub file: String,
     pub line: usize,
-    pub kind: String,    // "prefix:AKIA" | "entropy" | "regex" | "gitleaks" | "trufflehog"
+    pub kind: String, // "prefix:AKIA" | "entropy" | "regex" | "gitleaks" | "trufflehog"
     pub snippet: String, // REDACTED, <= ~40 chars
 }
 
@@ -655,9 +655,7 @@ pub fn scan_text(text: &str, file_label: &str, cfg: &Config, external: bool) -> 
 fn validate_secret_patterns_or_exit(patterns: &[String]) {
     for (index, pattern) in patterns.iter().enumerate() {
         if let Err(e) = Regex::new(pattern) {
-            eprintln!(
-                "error: invalid secret_patterns entry {index}: {pattern:?}: {e}"
-            );
+            eprintln!("error: invalid secret_patterns entry {index}: {pattern:?}: {e}");
             std::process::exit(2);
         }
     }
@@ -820,12 +818,10 @@ mod tests {
     #[test]
     fn detects_sk_proj_and_sk_ant_prefixes() {
         let cfg = test_cfg();
-        let text = "key=sk-proj-abcdefghijklmnopqrstuvwxyz\nother=sk-ant-abcdefghijklmnopqrstuvwxyz";
+        let text =
+            "key=sk-proj-abcdefghijklmnopqrstuvwxyz\nother=sk-ant-abcdefghijklmnopqrstuvwxyz";
         let findings = scan_text(text, "test", &cfg, false);
-        let sk = findings
-            .iter()
-            .filter(|f| f.kind == "prefix:sk-")
-            .count();
+        let sk = findings.iter().filter(|f| f.kind == "prefix:sk-").count();
         assert!(
             sk >= 2,
             "expected sk-proj- and sk-ant- prefix hits, got: {:?}",

@@ -8,10 +8,7 @@ pub fn run(cfg: &Config) -> anyhow::Result<()> {
     let mut blockers = 0usize;
 
     // 1. tide version
-    println!(
-        "ok     tide version      v{}",
-        env!("CARGO_PKG_VERSION")
-    );
+    println!("ok     tide version      v{}", env!("CARGO_PKG_VERSION"));
 
     // 2. config file
     let cfg_path = config::config_path();
@@ -55,19 +52,14 @@ pub fn run(cfg: &Config) -> anyhow::Result<()> {
     for w in &cfg.watches {
         let source = config::expand_tilde(&w.source);
         if !source.exists() {
-            println!(
-                "warn   watched files     missing source: {}",
-                w.source
-            );
+            println!("warn   watched files     missing source: {}", w.source);
             missing += 1;
         }
     }
     if missing == 0 {
         println!("ok     watched files     {n} registered");
     } else {
-        println!(
-            "warn   watched files     {n} registered, {missing} source(s) missing"
-        );
+        println!("warn   watched files     {n} registered, {missing} source(s) missing");
     }
 
     // 6. credential / ssh

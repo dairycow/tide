@@ -1,10 +1,10 @@
 mod config;
-mod repo;
-mod scan;
 mod diff;
-mod sync;
 mod doctor;
 mod install;
+mod repo;
+mod scan;
+mod sync;
 
 use clap::Parser;
 
@@ -18,15 +18,21 @@ struct Cli {
 #[derive(clap::Subcommand)]
 enum Cmd {
     Init,
-    Add { path: std::path::PathBuf },
-    Rm { path: std::path::PathBuf },
+    Add {
+        path: std::path::PathBuf,
+    },
+    Rm {
+        path: std::path::PathBuf,
+    },
     List,
     Diff,
     Scan,
     Sync,
     Doctor,
     #[command(name = "install-skill")]
-    InstallSkill { agent: Option<String> },
+    InstallSkill {
+        agent: Option<String>,
+    },
 }
 
 fn main() {
@@ -80,9 +86,6 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
             let cfg = load_cfg_or_hint()?;
             doctor::run(&cfg)
         }
-        Cmd::InstallSkill { agent } => {
-            let cfg = load_cfg_or_hint()?;
-            install::run(&cfg, agent)
-        }
+        Cmd::InstallSkill { agent } => install::run(agent),
     }
 }

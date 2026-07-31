@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,8 +100,8 @@ pub fn load() -> Result<Config> {
     }
     let contents = std::fs::read_to_string(&path)
         .with_context(|| format!("reading config {}", path.display()))?;
-    let cfg: Config = toml::from_str(&contents)
-        .with_context(|| format!("parsing config {}", path.display()))?;
+    let cfg: Config =
+        toml::from_str(&contents).with_context(|| format!("parsing config {}", path.display()))?;
     Ok(cfg)
 }
 
@@ -240,13 +240,8 @@ pub fn cmd_add(path: PathBuf) -> Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
     }
-    std::fs::copy(&home_file, &dest).with_context(|| {
-        format!(
-            "copying {} -> {}",
-            home_file.display(),
-            dest.display()
-        )
-    })?;
+    std::fs::copy(&home_file, &dest)
+        .with_context(|| format!("copying {} -> {}", home_file.display(), dest.display()))?;
 
     cfg.watches.retain(|w| w.source != source);
     cfg.watches.push(Watch {

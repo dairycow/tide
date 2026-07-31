@@ -3,7 +3,7 @@
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::config::{self, Config};
 
@@ -35,9 +35,9 @@ pub fn copy_watched_into_repo(cfg: &Config) -> Result<usize> {
 
         // Reject absolute targets and any `..` / root components (path traversal).
         if target_path.is_absolute()
-            || target_path.components().any(|c| {
-                matches!(c, Component::ParentDir | Component::RootDir)
-            })
+            || target_path
+                .components()
+                .any(|c| matches!(c, Component::ParentDir | Component::RootDir))
         {
             tracing::warn!(
                 "skipping unsafe target {target} for {source}",
@@ -72,15 +72,10 @@ pub fn copy_watched_into_repo(cfg: &Config) -> Result<usize> {
                 .with_context(|| format!("creating {}", parent.display()))?;
         }
 
-        let bytes = std::fs::read(&source)
-            .with_context(|| format!("reading {}", source.display()))?;
-        std::fs::write(&dest, bytes).with_context(|| {
-            format!(
-                "writing {} -> {}",
-                source.display(),
-                dest.display()
-            )
-        })?;
+        let bytes =
+            std::fs::read(&source).with_context(|| format!("reading {}", source.display()))?;
+        std::fs::write(&dest, bytes)
+            .with_context(|| format!("writing {} -> {}", source.display(), dest.display()))?;
         count += 1;
     }
 
@@ -120,12 +115,7 @@ pub fn staged_diff_quiet(repo: &Path) -> Result<bool> {
         .arg(repo)
         .args(["diff", "--cached", "--quiet"])
         .output()
-        .with_context(|| {
-            format!(
-                "running git -C {} diff --cached --quiet",
-                repo.display()
-            )
-        })?;
+        .with_context(|| format!("running git -C {} diff --cached --quiet", repo.display()))?;
 
     match output.status.code() {
         Some(0) => Ok(true),
@@ -181,7 +171,8 @@ pub fn push(repo: &Path) -> Result<()> {
 }
 
 pub fn head_short_sha(repo: &Path) -> Result<String> {
-    let output = git(repo, &["rev-parse", "--short", "HEAD"]).context("git rev-parse --short HEAD")?;
+    let output =
+        git(repo, &["rev-parse", "--short", "HEAD"]).context("git rev-parse --short HEAD")?;
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 

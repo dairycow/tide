@@ -77,6 +77,9 @@ pub fn run(cfg: &Config) -> anyhow::Result<()> {
     }
 
     // 6. Result line.
-    println!("synced: {} | commit: {} | pushed: {}", targets_joined, sha, pushed);
+    println!(
+        "synced: {} | commit: {} | pushed: {}",
+        targets_joined, sha, pushed
+    );
     Ok(())
 }

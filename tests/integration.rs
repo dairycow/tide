@@ -15,9 +15,7 @@ fn tide_bin() -> PathBuf {
     // Standard for `[[bin]]` / package-named binary under cargo test.
     option_env!("CARGO_BIN_EXE_tide")
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/debug/tide")
-        })
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/debug/tide"))
 }
 
 /// Run `tide <args>` with HOME (and related env) pointed at `home`.
@@ -143,7 +141,10 @@ entropy_min_length = 20
     // Initialize working repo with local identity (survives GIT_CONFIG_GLOBAL=/dev/null).
     git_ok(&["init"], Some(&repo));
     git_ok(&["config", "user.name", "tide-test"], Some(&repo));
-    git_ok(&["config", "user.email", "tide-test@example.com"], Some(&repo));
+    git_ok(
+        &["config", "user.email", "tide-test@example.com"],
+        Some(&repo),
+    );
     git_ok(&["config", "commit.gpgsign", "false"], Some(&repo));
     git_ok(&["branch", "-M", "main"], Some(&repo));
     git_ok(
@@ -173,10 +174,7 @@ fn bare_commit_count(bare: &Path) -> u64 {
         None,
     );
     if !out.status.success() {
-        panic!(
-            "rev-list failed: {}",
-            stderr_str(&out)
-        );
+        panic!("rev-list failed: {}", stderr_str(&out));
     }
     stdout_str(&out)
         .trim()
@@ -186,15 +184,9 @@ fn bare_commit_count(bare: &Path) -> u64 {
 
 fn bare_show(bare: &Path, path: &str) -> String {
     let rev = format!("main:{path}");
-    let out = git(
-        &["--git-dir", bare.to_str().unwrap(), "show", &rev],
-        None,
-    );
+    let out = git(&["--git-dir", bare.to_str().unwrap(), "show", &rev], None);
     if !out.status.success() {
-        panic!(
-            "git show {rev} failed: {}",
-            stderr_str(&out)
-        );
+        panic!("git show {rev} failed: {}", stderr_str(&out));
     }
     stdout_str(&out)
 }
@@ -214,14 +206,14 @@ fn happy_path_sync_pushes_to_remote() {
     );
 
     // 1. Benign bashrc.
-    fs::write(
-        fx.home.join(".bashrc"),
-        "# my bashrc\nalias ll='ls -l'\n",
-    )
-    .expect("write .bashrc");
+    fs::write(fx.home.join(".bashrc"), "# my bashrc\nalias ll='ls -l'\n").expect("write .bashrc");
 
     // 2. tide add
-    let out = tide(&bin, &fx.home, &["add", &format!("{}/.bashrc", fx.home.display())]);
+    let out = tide(
+        &bin,
+        &fx.home,
+        &["add", &format!("{}/.bashrc", fx.home.display())],
+    );
     assert_exit(&out, 0, "tide add ~/.bashrc");
     let add_out = stdout_str(&out);
     assert!(
@@ -338,4 +330,71 @@ fn secret_block_refuses_push() {
     );
 
     let _ = fx.repo;
+}
+
+// ---------------------------------------------------------------------------
+// Test C — install-skill works without a config (pre-init)
+// ---------------------------------------------------------------------------
+
+struct TempHome {
+    root: PathBuf,
+    home: PathBuf,
+}
+
+impl TempHome {
+    fn new() -> Self {
+        let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let root = std::env::temp_dir().join(format!(
+            "tide-itest-{}-{}-{}",
+            std::process::id(),
+            n,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let home = root.join("home");
+        fs::create_dir_all(&home).expect("create home");
+        TempHome { root, home }
+    }
+}
+
+impl Drop for TempHome {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+#[test]
+fn install_skill_works_without_config() {
+    // Pre-init: no ~/.config/tide/tide.toml exists. `install-skill` does not
+    // depend on the config, so it must succeed before `tide init` is ever run —
+    // this is what lets a fresh agent load the skill and then guide setup.
+    let th = TempHome::new();
+    let bin = tide_bin();
+    assert!(bin.is_file(), "tide binary missing at {}", bin.display());
+
+    // Precondition: no config present.
+    assert!(
+        !th.home.join(".config/tide/tide.toml").exists(),
+        "precondition: no tide.toml should exist"
+    );
+
+    let out = tide(&bin, &th.home, &["install-skill", "opencode"]);
+    assert_exit(&out, 0, "tide install-skill without config");
+
+    let skill = th.home.join(".config/opencode/skills/tide/SKILL.md");
+    assert!(
+        skill.is_file(),
+        "SKILL.md should be written at {}\nstdout:\n{}\nstderr:\n{}",
+        skill.display(),
+        stdout_str(&out),
+        stderr_str(&out)
+    );
+
+    let body = fs::read_to_string(&skill).expect("read installed SKILL.md");
+    assert!(
+        body.contains("# tide"),
+        "installed SKILL.md should contain the tide skill header, got:\n{body}"
+    );
 }
