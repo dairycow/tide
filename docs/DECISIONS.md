@@ -29,13 +29,12 @@ chezmoi, no background service.** One-shot.
 
 | Command | Behavior |
 |---|---|
-| `tide init` | Create `~/.config/tide/tide.toml` + `git init` the repo. Prompt for remote URL (`origin`), prefilled from the `gh` CLI when available (authenticated user as owner, current directory basename as repo, gh's configured protocol); press enter to accept. If gh is authenticated and the URL points at github.com, offer to create a private repo there (opt-in). All gh inference is non-fatal — missing/unauthenticated `gh` falls back to an empty prompt. Offer to adopt common dotfiles (`chezmoi`-free: just `tide add` each). |
+| `tide init` | Create/merge `~/.config/tide/tide.toml` + `git init` the repo (**idempotent**: preserves existing watches/config; only re-sets the remote; `origin` is set-or-updated). Prompt for remote URL (`origin`), prefilled from the `gh` CLI as `<owner>/dotfiles` (tide is a dotfile tool — the cwd basename collided with the tool's own source repo when run inside it; gh's configured protocol); press enter to accept. If gh is authenticated and the URL points at github.com, offer to create a private repo there (opt-in). All gh inference is non-fatal — missing/unauthenticated `gh` falls back to an empty prompt. Then **detect common dotfiles** under `$HOME` and offer to adopt them (`Add all? [y/N]`, default no; conservative allowlist + secret denylist; `chezmoi`-free: just `tide add` each). |
 | `tide add <path>` | Register a home path as watched. Copy it into the repo now (compute `target`). Append to watch list in config. |
 | `tide rm <path>` | Unregister a path (leave the home file and the repo copy as-is). |
 | `tide list` | Print watched `source -> target` mappings. |
 | `tide diff` | Copy all watched home files → repo, `git add -A`, print `git diff --cached`. **NO commit, NO push.** |
-| `tide scan` | Run the scan engine over the would-be-uploaded (staged) content. Prefixes + entropy + regex + external (`gitleaks`/`trufflehog` if on PATH). Exit `0` clean, `2` findings. Prints findings `file:line: kind: snippet`. |
-| `tide sync` | Copy all watched home files → repo. `git add -A`. If `git diff --cached --quiet` → "nothing to sync", stop (exit 0). Else run **regex gate** (subset of scan engine); if hit → `git reset`, warn, abort (exit 2). Else commit, fetch, `pull --rebase -X theirs`, push (if `auto_push`). Print machine-friendly result. |
+| `tide sync` | Copy all watched home files → repo. `git add -A`. If `git diff --cached --quiet` → "nothing to sync", stop (exit 0). Else run the **full secret gate** (prefixes + entropy + regex + external `gitleaks`/`trufflehog` if on PATH — the former `tide scan` engine, folded in as of v0.4.0); on hit → `git reset`, warn, abort (exit 2), **nothing pushed**. Else commit, fetch, `pull --rebase -X theirs`, push (if `auto_push`). Print machine-friendly result. |
 | `tide doctor` | Report: tide binary, repo exists + is git repo, `origin` set, ssh key / credential helper present, watched file count, whether `gitleaks`/`trufflehog` present. Exit non-zero if a blocker found. |
 | `tide install-skill` | Copy the embedded `SKILL.md` (`include_str!`) into `~/.agents/skills/tide/` — the cross-tool skill root. |
 
@@ -73,31 +72,33 @@ path segment`.
 If `source` is not under `$HOME`, `target` is `source` with leading `/` and `.`
 stripped (best-effort); `tide add` prints the computed `target` for confirmation.
 
-## Secret defense (4 layers)
+## Secret defense (3 layers)
 
 1. **Agent semantic review** of `tide diff` — documented in `SKILL.md`, not in
-   the binary. Catches judgment calls no pattern matches.
-2. **`tide scan`** (full engine):
+   the binary. Catches judgment calls no pattern matches. Run `tide diff` and
+   eyeball it before syncing.
+2. **`tide sync` full gate** — the engine in `scan.rs`, run over staged content
+   before any commit/push (this absorbs the former `tide scan` command, v0.4.0):
    - **Known prefixes** (compiled once): `AKIA`, `ghp_`, `gho_`, `ghu_`, `ghs_`,
      `ghr_`, `sk-`, `xox[bpoa]-`, `glpat-`, `AIza`, `eyJ` (JWT), and the literal
      `-----BEGIN ... PRIVATE KEY-----`.
    - **High-entropy** runs: tokens matching `[A-Za-z0-9+/=_-]{N,}` (N =
      `entropy_min_length`) with Shannon entropy > `entropy_threshold` bits/char.
    - **Regex** from config `secret_patterns`.
-3. **External scanner** — if `gitleaks` or `trufflehog` is on PATH, `tide scan`
-   shells out to it over the repo and merges findings. Skips silently if absent.
-4. **`tide sync` internal regex gate** — last-resort block before push (uses the
-   regex subset of the engine; fast).
+   - **External scanner** — if `gitleaks` or `trufflehog` is on PATH, `tide sync`
+     shells out to it over the repo and merges findings. Skips silently if absent.
+   On any hit → unstages, aborts (exit 2), **nothing pushed**.
+3. **Conflict policy** — `git pull --rebase -X theirs` so **local wins** on conflict.
 
-`scan.rs` is **one shared engine**; `tide scan` uses the full set, `tide sync`
-uses the regex-only fast path. Findings shape: `{ file, line, kind, snippet }`.
-Truncate `snippet` to ~40 chars and redact the middle of obvious secrets before
-printing.
+`scan.rs` is **one shared engine**, now invoked only by `tide sync`'s gate (and
+exercised by its own unit tests — `scan_text` stays `pub`). Findings shape:
+`{ file, line, kind, snippet }`. Truncate `snippet` to ~40 chars and redact the
+middle of obvious secrets before printing.
 
 ## Output contract (agent-friendly)
 
 - Every command prints concise, parseable lines to stdout.
-- Exit codes: `0` success/no-op/clean; `2` scan findings / secret block /
+- Exit codes: `0` success/no-op/clean; `2` secret finding / block /
   user-fixable error; `1` unexpected failure.
 - `tide sync` success line includes: files synced, commit short sha, `pushed=yes|no`.
 

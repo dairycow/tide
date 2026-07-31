@@ -65,3 +65,28 @@ reported redundantly and exits 1 (not 2); non-blocking.
 
 ## Status legend
 `[ ]` pending · `[~]` in progress · `[x]` done (committed, gate green)
+
+---
+
+## v0.4.0 — CLI redesign + init dotfile defaults (2026-07-31)
+
+- [x] `tide init` default remote → `<owner>/dotfiles` (was cwd basename, which
+      collided with the tool's own source repo when init ran inside it).
+- [x] `tide init` **idempotent**: preserves existing watches/config on re-run;
+      `origin` is set-or-updated (no failure on a second run).
+- [x] `tide init` **detects common dotfiles** under `$HOME` and offers to adopt
+      them (`Add all? [y/N]`, default no; conservative file allowlist + secret
+      denylist: `.ssh .aws .gnupg .kube .docker .netrc .npmrc .env* .pypirc`).
+- [x] **`tide scan` removed**; its full engine folded into `tide sync`'s gate
+      (prefixes + entropy + regex + external `gitleaks`/`trufflehog`). Same
+      block semantics: exit 2, index reset, nothing pushed.
+- [x] `scan::run` deleted; `validate_secret_patterns_or_exit` → `pub(crate)`,
+      reused by `sync` (dedup; `regex` import dropped from `sync.rs`).
+- [x] Docs updated: `skill/SKILL.md`, `docs/DECISIONS.md`, `README.md`,
+      `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md` (4-layer → 3-layer
+      defense; `scan` → `sync`).
+- [x] Tests: dropped `tide scan` e2e steps (Tests A & B); added e2e
+      `init_detects_and_adopts_dotfiles` + unit tests for `default_remote`,
+      `detect_dotfiles_in`, denylist.
+- GATE green: `cargo build --release` + `cargo test --all` (26 tests) +
+  `cargo clippy --all-targets -- -D warnings` + `cargo fmt --all -- --check`.
