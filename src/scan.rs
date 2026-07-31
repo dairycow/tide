@@ -38,7 +38,7 @@ fn prefix_engine() -> &'static PrefixEngine {
             (r"ghu_[A-Za-z0-9]{36,}", "ghu_"),
             (r"ghs_[A-Za-z0-9]{36,}", "ghs_"),
             (r"ghr_[A-Za-z0-9]{36,}", "ghr_"),
-            (r"sk-[A-Za-z0-9]{20,}", "sk-"),
+            (r"sk-[A-Za-z0-9_-]{20,}", "sk-"),
             (r"xox[bpoa]-[A-Za-z0-9-]{10,}", "xox"),
             (r"glpat-[A-Za-z0-9_-]{20}", "glpat-"),
             (r"AIza[0-9A-Za-z_-]{35}", "AIza"),
@@ -87,25 +87,23 @@ fn all_identical(s: &[u8]) -> bool {
 // Redaction
 // ---------------------------------------------------------------------------
 
-/// Keep at most first 4 and last 4 chars of the secret, middle → `…`. Cap ~40.
+/// Redact a secret for display. Length ≤ 8 → full mask `****` (no real chars).
+/// Longer → first 4 / middle `…` / last 4, capped at ~40 chars.
 fn redact(secret: &str) -> String {
     let chars: Vec<char> = secret.chars().collect();
     let n = chars.len();
     let redacted = if n == 0 {
         String::new()
-    } else if n <= 4 {
-        format!("{}…", chars.iter().collect::<String>())
     } else if n <= 8 {
-        let head: String = chars.iter().take(4).collect();
-        format!("{head}…")
+        // Short secrets: never print any real characters.
+        "****".to_string()
     } else {
         let head: String = chars.iter().take(4).collect();
         let tail: String = chars[n - 4..].iter().collect();
         format!("{head}…{tail}")
     };
     // Cap overall snippet length (~40 chars).
-    let capped: String = redacted.chars().take(40).collect();
-    capped
+    redacted.chars().take(40).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -586,31 +584,51 @@ fn run_external(repo: &Path) -> Vec<Finding> {
 // Public API
 // ---------------------------------------------------------------------------
 
+/// Clamp user `entropy_min_length` to a sane inclusive range before building
+/// the entropy token regex. Prevents panics / pathological patterns from
+/// absurd config values.
+fn clamp_entropy_min_length(n: usize) -> usize {
+    n.clamp(4, 64)
+}
+
 /// Pure scan of a text blob (e.g. a `git diff`). Applies known prefixes +
 /// high-entropy runs + config regex. If `external == true` AND a scanner binary
 /// is on PATH, also shells out to gitleaks/trufflehog and merges findings.
+///
+/// Never panics on config values: invalid `secret_patterns` are dropped (with
+/// a warning), and a failed entropy regex skips entropy detection.
 pub fn scan_text(text: &str, file_label: &str, cfg: &Config, external: bool) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    let eng_entropy = Regex::new(&format!(
-        r"[A-Za-z0-9+/=_-]{{{},}}",
-        cfg.entropy_min_length.max(1)
-    ))
-    .expect("entropy regex must compile");
+    let min_length = clamp_entropy_min_length(cfg.entropy_min_length);
+    let eng_entropy = match Regex::new(&format!(r"[A-Za-z0-9+/=_-]{{{},}}", min_length)) {
+        Ok(re) => Some(re),
+        Err(e) => {
+            tracing::warn!(
+                min_length,
+                error = %e,
+                "failed to compile entropy regex; skipping entropy detection"
+            );
+            None
+        }
+    };
 
+    // Fallible: invalid patterns are dropped (with warn); never panics.
     let (user_set, user_regs) = compile_user_patterns(&cfg.secret_patterns);
 
     for ctx in iter_scannable_lines(text, file_label) {
         scan_line_prefixes(ctx.content, &ctx.file, ctx.line, &mut findings);
-        scan_line_entropy(
-            ctx.content,
-            &ctx.file,
-            ctx.line,
-            cfg.entropy_min_length,
-            cfg.entropy_threshold,
-            &eng_entropy,
-            &mut findings,
-        );
+        if let Some(ref eng_entropy) = eng_entropy {
+            scan_line_entropy(
+                ctx.content,
+                &ctx.file,
+                ctx.line,
+                min_length,
+                cfg.entropy_threshold,
+                eng_entropy,
+                &mut findings,
+            );
+        }
         scan_line_regex(
             ctx.content,
             &ctx.file,
@@ -631,8 +649,25 @@ pub fn scan_text(text: &str, file_label: &str, cfg: &Config, external: bool) -> 
     findings
 }
 
+/// Validate every `secret_patterns` entry by compiling it. On any invalid
+/// pattern, print a hard error to stderr and exit 2 so a broken config cannot
+/// silently weaken detection (e.g. during `tide sync` / `tide scan`).
+fn validate_secret_patterns_or_exit(patterns: &[String]) {
+    for (index, pattern) in patterns.iter().enumerate() {
+        if let Err(e) = Regex::new(pattern) {
+            eprintln!(
+                "error: invalid secret_patterns entry {index}: {pattern:?}: {e}"
+            );
+            std::process::exit(2);
+        }
+    }
+}
+
 /// `tide scan` CLI handler (called by main).
 pub fn run(cfg: &Config) -> anyhow::Result<()> {
+    // Hard-fail broken regex config before scanning (never silently drop).
+    validate_secret_patterns_or_exit(&cfg.secret_patterns);
+
     let repo = repo::repo_path(cfg);
     repo::copy_watched_into_repo(cfg)?;
     repo::add_all(&repo)?;
@@ -740,5 +775,61 @@ mod tests {
     fn shannon_identical_is_zero() {
         assert!((shannon_entropy(b"aaaaaaaaaa") - 0.0).abs() < 1e-9);
         assert!(all_identical(b"aaaaaaaaaa"));
+    }
+
+    #[test]
+    fn scan_text_no_panic_on_absurd_entropy_min_length() {
+        let mut cfg = test_cfg();
+        cfg.entropy_min_length = 999_999;
+        // Must not panic; entropy detection is skipped or clamped.
+        let findings = scan_text("hello world TOKEN=abc", "test", &cfg, false);
+        // Prefix/regex still work; only entropy path is clamped/skipped.
+        let _ = findings;
+    }
+
+    #[test]
+    fn scan_text_tolerates_invalid_secret_patterns() {
+        let mut cfg = test_cfg();
+        cfg.secret_patterns = vec![
+            r"(?i)(token|password)\s*=".to_string(),
+            r"[invalid(".to_string(), // broken regex
+            r"secret\s*=".to_string(),
+        ];
+        // Must not panic; invalid entry is dropped, valid ones still apply.
+        let findings = scan_text("TOKEN=abc123", "test", &cfg, false);
+        assert!(
+            findings.iter().any(|f| f.kind == "regex"),
+            "valid patterns must still match, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn short_secret_fully_masked() {
+        assert_eq!(redact("short"), "****");
+        assert_eq!(redact("12345678"), "****");
+        assert_eq!(redact("abcd"), "****");
+        // Longer secrets keep first-4 / last-4 form.
+        let long = redact("abcdefghijklmnop");
+        assert!(long.starts_with("abcd"));
+        assert!(long.ends_with("mnop"));
+        assert!(long.contains('…'));
+        assert!(!long.contains("efghijkl"));
+    }
+
+    #[test]
+    fn detects_sk_proj_and_sk_ant_prefixes() {
+        let cfg = test_cfg();
+        let text = "key=sk-proj-abcdefghijklmnopqrstuvwxyz\nother=sk-ant-abcdefghijklmnopqrstuvwxyz";
+        let findings = scan_text(text, "test", &cfg, false);
+        let sk = findings
+            .iter()
+            .filter(|f| f.kind == "prefix:sk-")
+            .count();
+        assert!(
+            sk >= 2,
+            "expected sk-proj- and sk-ant- prefix hits, got: {:?}",
+            findings
+        );
     }
 }
