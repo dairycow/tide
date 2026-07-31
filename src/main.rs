@@ -26,7 +26,6 @@ enum Cmd {
     },
     List,
     Diff,
-    Scan,
     Sync,
     Doctor,
     #[command(name = "install-skill")]
@@ -71,10 +70,6 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
         Cmd::Diff => {
             let cfg = load_cfg_or_hint()?;
             diff::run(&cfg)
-        }
-        Cmd::Scan => {
-            let cfg = load_cfg_or_hint()?;
-            scan::run(&cfg)
         }
         Cmd::Sync => {
             let cfg = load_cfg_or_hint()?;

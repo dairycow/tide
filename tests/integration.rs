@@ -228,16 +228,7 @@ fn happy_path_sync_pushes_to_remote() {
     )
     .expect("rewrite .bashrc");
 
-    // 4. tide scan — clean.
-    let out = tide(&bin, &fx.home, &["scan"]);
-    assert_exit(&out, 0, "tide scan (clean)");
-    let scan_out = stdout_str(&out);
-    assert!(
-        scan_out.to_lowercase().contains("clean"),
-        "scan stdout should contain 'clean', got: {scan_out}"
-    );
-
-    // 5. tide sync — push.
+    // 4. tide sync — push (its full-engine gate is clean here).
     let out = tide(&bin, &fx.home, &["sync"]);
     assert_exit(&out, 0, "tide sync");
     let sync_out = stdout_str(&out);
@@ -291,21 +282,8 @@ fn secret_block_refuses_push() {
     );
     assert_exit(&out, 0, "tide add ~/.zshrc");
 
-    // 2. tide scan — findings (exit 2), prefix mentioned, full token redacted.
-    let out = tide(&bin, &fx.home, &["scan"]);
-    assert_exit(&out, 2, "tide scan (secret)");
-    let scan_out = stdout_str(&out);
-    let scan_combined = format!("{scan_out}{}", stderr_str(&out));
-    assert!(
-        scan_combined.contains("prefix:ghp") || scan_combined.contains("prefix:ghp_"),
-        "scan should mention prefix:ghp, got:\n{scan_combined}"
-    );
-    assert!(
-        !scan_combined.contains(&full_token),
-        "scan output must not contain the full token; got:\n{scan_combined}"
-    );
-
-    // 3. tide sync — blocked, no push.
+    // 2. tide sync — its full-engine gate (prefixes + entropy + regex) must
+    //    block the ghp_ token: exit 2, no push, full token redacted.
     let out = tide(&bin, &fx.home, &["sync"]);
     assert_exit(&out, 2, "tide sync (secret block)");
     let sync_out = stdout_str(&out);
@@ -316,13 +294,15 @@ fn secret_block_refuses_push() {
         "sync must not report pushed: yes on secret block; stdout: {sync_out}"
     );
     assert!(
-        sync_combined.to_lowercase().contains("block")
-            || sync_combined.to_lowercase().contains("abort")
-            || sync_combined.contains("secret"),
-        "sync should report block/abort; got:\n{sync_combined}"
+        sync_combined.contains("prefix:ghp") || sync_combined.contains("prefix:ghp_"),
+        "sync gate should mention prefix:ghp, got:\n{sync_combined}"
+    );
+    assert!(
+        !sync_combined.contains(&full_token),
+        "sync output must not contain the full token; got:\n{sync_combined}"
     );
 
-    // 4. Remote commit count unchanged.
+    // 3. Remote commit count unchanged.
     let commits_after = bare_commit_count(&fx.bare);
     assert_eq!(
         commits_before, commits_after,
@@ -475,5 +455,92 @@ fn init_works_without_gh() {
         repo.join(".git").exists(),
         "git repo should be initialized at {}",
         repo.display()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test E — init detects common dotfiles and adopts them on "y"; denylisted
+// files (e.g. .npmrc) are never suggested
+// ---------------------------------------------------------------------------
+
+#[test]
+fn init_detects_and_adopts_dotfiles() {
+    let th = TempHome::new();
+    let bin = tide_bin();
+    assert!(bin.is_file(), "tide binary missing at {}", bin.display());
+
+    // Stub gh (always fails) so remote inference is skipped — hermetic.
+    let bin_dir = th.root.join("fakebin");
+    fs::create_dir_all(&bin_dir).expect("create fakebin");
+    let gh_stub = bin_dir.join("gh");
+    fs::write(&gh_stub, "#!/bin/sh\nexit 1\n").expect("write gh stub");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&gh_stub).expect("stat gh stub").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&gh_stub, perms).expect("chmod gh stub");
+    }
+    let path = format!(
+        "{}:{}",
+        bin_dir.to_string_lossy(),
+        std::env::var_os("PATH")
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    );
+
+    // Seed dotfiles: two adoptable, one denylisted (must NOT be suggested).
+    fs::write(th.home.join(".bashrc"), "# bash\n").expect("write .bashrc");
+    fs::write(th.home.join(".tmux.conf"), "# tmux\n").expect("write .tmux.conf");
+    fs::write(th.home.join(".npmrc"), "//registry/:_authToken=secret\n").expect("write .npmrc");
+
+    // stdin: blank line (skip remote prompt), then "y" (adopt all detected).
+    let mut cmd = Command::new(&bin);
+    cmd.args(["init"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("HOME", &th.home)
+        .env("XDG_CONFIG_HOME", th.home.join(".config"))
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "tide-test")
+        .env("GIT_AUTHOR_EMAIL", "tide-test@example.com")
+        .env("GIT_COMMITTER_NAME", "tide-test")
+        .env("GIT_COMMITTER_EMAIL", "tide-test@example.com")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("PATH", &path);
+    let mut child = cmd.spawn().expect("spawn tide init");
+    {
+        use std::io::Write;
+        let stdin = child.stdin.as_mut().expect("piped stdin");
+        stdin.write_all(b"\ny\n").expect("write stdin");
+    }
+    let out = child.wait_with_output().expect("wait for tide init");
+    let combined = format!("{}{}", stdout_str(&out), stderr_str(&out));
+    assert_exit(&out, 0, &format!("tide init suggest\n{combined}"));
+
+    // Adopted watches present; denylisted .npmrc absent.
+    let cfg_path = th.home.join(".config/tide/tide.toml");
+    let body = fs::read_to_string(&cfg_path).expect("read tide.toml");
+    assert!(
+        body.contains("~/.bashrc"),
+        "bashrc should be watched:\n{body}"
+    );
+    assert!(
+        body.contains("~/.tmux.conf"),
+        "tmux.conf should be watched:\n{body}"
+    );
+    assert!(
+        !body.contains("~/.npmrc"),
+        "denylisted .npmrc must NOT be watched:\n{body}"
+    );
+
+    // Repo working tree holds the copied files.
+    let repo = th.home.join(".local/share/tide/repo");
+    assert!(repo.join("bashrc").is_file(), "repo missing copied bashrc");
+    assert!(
+        repo.join("tmux.conf").is_file(),
+        "repo missing copied tmux.conf"
     );
 }

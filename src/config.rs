@@ -204,13 +204,76 @@ fn split_owner_repo(s: &str) -> Option<(String, String)> {
     Some((owner.to_string(), repo.to_string()))
 }
 
-/// Infer the repo name from the current working directory's basename
-/// (matches `gh repo create`'s default). `None` at filesystem root.
-fn repo_name_from_cwd() -> Option<String> {
-    let cwd = std::env::current_dir().ok()?;
-    let name = cwd.file_name()?;
-    let s = name.to_string_lossy();
-    (!s.is_empty()).then(|| s.into_owned())
+/// The default dotfile-sync repo name. tide is a *dotfile* sync tool, so the
+/// inferred remote is `<owner>/dotfiles` — NOT the cwd basename, which
+/// collided with the tool's own source repo when `init` ran inside it.
+const DEFAULT_REPO_NAME: &str = "dotfiles";
+
+/// Build the default remote URL for a given owner, using gh's protocol.
+fn default_remote(owner: &str, ssh: bool) -> String {
+    build_remote_url(owner, DEFAULT_REPO_NAME, ssh)
+}
+
+// Common dotfiles `tide init` offers to adopt. Conservative: files only (never
+// whole directories), and never anything matched by `DENYLIST`.
+const COMMON_DOTFILES: &[&str] = &[
+    "~/.bashrc",
+    "~/.zshrc",
+    "~/.bash_profile",
+    "~/.profile",
+    "~/.zprofile",
+    "~/.zshenv",
+    "~/.bash_aliases",
+    "~/.inputrc",
+    "~/.editorconfig",
+    "~/.vimrc",
+    "~/.config/nvim/init.lua",
+    "~/.config/nvim/init.vim",
+    "~/.emacs",
+    "~/.tmux.conf",
+    "~/.gitconfig",
+    "~/.gitignore_global",
+];
+
+// Never auto-suggested (high secret-bearing risk). Enforced defensively in
+// `path_hits_denylist` even if `COMMON_DOTFILES` later grows a risky entry.
+const DENYLIST: &[&str] = &[
+    ".ssh", ".aws", ".gnupg", ".kube", ".docker", ".netrc", ".env", ".pypirc", ".npmrc",
+];
+
+/// True if any segment of `s` (a `~/...` path) is in the DENYLIST. Segments are
+/// compared with a single leading `.` stripped, so `.npmrc` matches `npmrc`.
+fn path_hits_denylist(s: &str) -> bool {
+    let rel = s.strip_prefix("~/").unwrap_or(s);
+    rel.split('/').any(|seg| {
+        let seg = seg.strip_prefix('.').unwrap_or(seg);
+        DENYLIST.iter().any(|d| {
+            let d = d.strip_prefix('.').unwrap_or(d);
+            seg == d
+        })
+    })
+}
+
+/// Which `COMMON_DOTFILES` exist as files under `home`, as `~/...` strings.
+/// Pure / testable (takes an explicit home dir); denylisted entries are skipped.
+fn detect_dotfiles_in(home: &Path) -> Vec<String> {
+    COMMON_DOTFILES
+        .iter()
+        .filter(|s| !path_hits_denylist(s))
+        .filter_map(|s| {
+            let rel = s.strip_prefix("~/")?;
+            if home.join(rel).is_file() {
+                Some((*s).to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Detect common dotfiles under the real `$HOME`.
+fn detect_dotfiles() -> Vec<String> {
+    detect_dotfiles_in(&home_dir())
 }
 
 /// Is a binary on PATH? (Pure PATH scan, never spawns — safe to probe.)
@@ -307,13 +370,13 @@ pub fn cmd_init(remote: Option<String>) -> Result<()> {
         Some(r) => r,
         None => {
             // Prefill the remote from the gh CLI when available: the
-            // authenticated user as owner, cwd basename as repo, gh's
-            // configured protocol.
+            // authenticated user as owner, "dotfiles" as the repo (tide is a
+            // dotfile sync tool — using the cwd basename collided with the
+            // tool's own source repo when init ran inside it), gh's protocol.
             let owner = gh_owner();
-            let default = match (&owner, repo_name_from_cwd()) {
-                (Some(o), Some(r)) => Some(build_remote_url(o, &r, gh_protocol_is_ssh())),
-                _ => None,
-            };
+            let default = owner
+                .as_deref()
+                .map(|o| default_remote(o, gh_protocol_is_ssh()));
             let remote = prompt_remote(&default.unwrap_or_default());
 
             // Offer to create the repo on GitHub (opt-in; only when gh is
@@ -330,10 +393,10 @@ pub fn cmd_init(remote: Option<String>) -> Result<()> {
         }
     };
 
-    let cfg = Config {
-        remote: remote.clone(),
-        ..Config::default()
-    };
+    // Idempotent: preserve existing config (watches + tuned fields) when
+    // re-running init; only (re)set the remote. No config file -> defaults.
+    let mut cfg = load()?;
+    cfg.remote = remote.clone();
     save(&cfg)?;
     println!("wrote config {}", config_path().display());
 
@@ -351,16 +414,55 @@ pub fn cmd_init(remote: Option<String>) -> Result<()> {
     }
     println!("initialized git repo at {}", repo.display());
 
+    // Set OR update `origin` — re-running `tide init` must not fail on an
+    // existing remote.
     if !remote.is_empty() {
+        let has_origin = Command::new("git")
+            .args(["remote", "get-url", "origin"])
+            .current_dir(&repo)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        let args: Vec<&str> = if has_origin {
+            vec!["remote", "set-url", "origin", &remote]
+        } else {
+            vec!["remote", "add", "origin", &remote]
+        };
         let status = Command::new("git")
-            .args(["remote", "add", "origin", &remote])
+            .args(&args)
             .current_dir(&repo)
             .status()
-            .context("running git remote add")?;
+            .context("running git remote")?;
         if !status.success() {
-            bail!("git remote add origin failed with status {status}");
+            bail!("git remote origin update failed with status {status}");
         }
         println!("set origin -> {remote}");
+    }
+
+    // Offer to adopt common dotfiles detected under $HOME (chezmoi-free: just
+    // `tide add` each). Already-watched files are skipped. Default NO so a
+    // non-interactive / agent run (EOF on stdin) adopts nothing by surprise.
+    let watched: std::collections::HashSet<&str> =
+        cfg.watches.iter().map(|w| w.source.as_str()).collect();
+    let candidates: Vec<String> = detect_dotfiles()
+        .into_iter()
+        .filter(|s| !watched.contains(s.as_str()))
+        .collect();
+    if candidates.is_empty() {
+        eprintln!("no common dotfiles detected; use `tide add <path>` to track files");
+    } else {
+        eprintln!("detected dotfiles:");
+        for (i, s) in candidates.iter().enumerate() {
+            eprintln!("  {}) {s}", i + 1);
+        }
+        if prompt_yes_no(&format!("Add these {} dotfiles?", candidates.len()), false) {
+            for src in &candidates {
+                let path = expand_tilde(src);
+                if let Err(e) = cmd_add(path) {
+                    eprintln!("warning: could not add {src}: {e:#}");
+                }
+            }
+        }
     }
 
     Ok(())
@@ -512,10 +614,66 @@ mod tests {
     }
 
     #[test]
-    fn repo_name_from_cwd_is_some() {
-        // cargo test's cwd is the package root; it has a basename.
-        let name = repo_name_from_cwd();
-        assert!(name.is_some(), "cwd should have a basename");
-        assert!(!name.unwrap().is_empty());
+    fn default_remote_uses_dotfiles() {
+        assert_eq!(
+            default_remote("alice", false),
+            "https://github.com/alice/dotfiles.git"
+        );
+        assert_eq!(
+            default_remote("alice", true),
+            "git@github.com:alice/dotfiles.git"
+        );
+    }
+
+    fn scratch_dir(name: &str) -> PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "tide-cfg-test-{}-{name}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        p
+    }
+
+    #[test]
+    fn detect_dotfiles_in_picks_present_skips_absent() {
+        let root = scratch_dir("detect");
+        std::fs::create_dir_all(root.join(".config/nvim")).expect("mkdir");
+        std::fs::write(root.join(".bashrc"), "x").expect("bashrc");
+        std::fs::write(root.join(".config/nvim/init.lua"), "x").expect("init.lua");
+        let got = detect_dotfiles_in(&root);
+        assert!(got.contains(&"~/.bashrc".to_string()), "got: {got:?}");
+        assert!(
+            got.contains(&"~/.config/nvim/init.lua".to_string()),
+            "got: {got:?}"
+        );
+        assert!(
+            !got.iter().any(|s| s.contains("zshrc")),
+            "absent .zshrc must not be detected: {got:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn common_dotfiles_none_are_denylisted() {
+        for s in COMMON_DOTFILES {
+            assert!(
+                !path_hits_denylist(s),
+                "COMMON_DOTFILES entry {s} is denylisted"
+            );
+        }
+    }
+
+    #[test]
+    fn denylist_catches_known_risky_entries() {
+        assert!(path_hits_denylist("~/.ssh/config"));
+        assert!(path_hits_denylist("~/.aws/credentials"));
+        assert!(path_hits_denylist("~/.netrc"));
+        assert!(path_hits_denylist("~/.npmrc"));
+        assert!(!path_hits_denylist("~/.bashrc"));
+        assert!(!path_hits_denylist("~/.gitconfig"));
     }
 }
