@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
@@ -30,7 +30,43 @@ pub fn copy_watched_into_repo(cfg: &Config) -> Result<usize> {
             continue;
         }
 
-        let dest = repo.join(&watch.target);
+        let target = &watch.target;
+        let target_path = Path::new(target);
+
+        // Reject absolute targets and any `..` / root components (path traversal).
+        if target_path.is_absolute()
+            || target_path.components().any(|c| {
+                matches!(c, Component::ParentDir | Component::RootDir)
+            })
+        {
+            tracing::warn!(
+                "skipping unsafe target {target} for {source}",
+                target = target,
+                source = source.display()
+            );
+            continue;
+        }
+
+        // Defense in depth: dest must stay under the canonical repo directory.
+        let dest = match std::fs::canonicalize(&repo) {
+            Ok(canonical_repo) => {
+                let dest = canonical_repo.join(target);
+                if !dest.starts_with(&canonical_repo) {
+                    tracing::warn!(
+                        "skipping unsafe target {target} for {source}",
+                        target = target,
+                        source = source.display()
+                    );
+                    continue;
+                }
+                dest
+            }
+            Err(_) => {
+                // Component check already passed; proceed with non-canonical repo.
+                repo.join(target)
+            }
+        };
+
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("creating {}", parent.display()))?;
