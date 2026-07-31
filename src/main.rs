@@ -30,9 +30,7 @@ enum Cmd {
     Sync,
     Doctor,
     #[command(name = "install-skill")]
-    InstallSkill {
-        agent: Option<String>,
-    },
+    InstallSkill,
 }
 
 fn main() {
@@ -86,6 +84,6 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
             let cfg = load_cfg_or_hint()?;
             doctor::run(&cfg)
         }
-        Cmd::InstallSkill { agent } => install::run(agent),
+        Cmd::InstallSkill => install::run(),
     }
 }

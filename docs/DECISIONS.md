@@ -37,7 +37,11 @@ chezmoi, no background service.** One-shot.
 | `tide scan` | Run the scan engine over the would-be-uploaded (staged) content. Prefixes + entropy + regex + external (`gitleaks`/`trufflehog` if on PATH). Exit `0` clean, `2` findings. Prints findings `file:line: kind: snippet`. |
 | `tide sync` | Copy all watched home files → repo. `git add -A`. If `git diff --cached --quiet` → "nothing to sync", stop (exit 0). Else run **regex gate** (subset of scan engine); if hit → `git reset`, warn, abort (exit 2). Else commit, fetch, `pull --rebase -X theirs`, push (if `auto_push`). Print machine-friendly result. |
 | `tide doctor` | Report: tide binary, repo exists + is git repo, `origin` set, ssh key / credential helper present, watched file count, whether `gitleaks`/`trufflehog` present. Exit non-zero if a blocker found. |
-| `tide install-skill [--agent claude\|opencode\|all]` | Copy the embedded `SKILL.md` (`include_str!`) into detected agent skill dirs. Default: install into all detected. |
+| `tide install-skill` | Copy the embedded `SKILL.md` (`include_str!`) into `~/.agents/skills/tide/` — the cross-tool skill root. |
+
+`install-skill` targets only `~/.agents/` (read by opencode, Grok, Codex, Gemini).
+Claude Code does not yet read `~/.agents/` (anthropics/claude-code#66352); it will
+not auto-discover the skill until that lands.
 
 ## Config schema (`~/.config/tide/tide.toml`)
 

@@ -13,8 +13,8 @@ cargo install --path .
 cargo build --release   # binary at target/release/tide
 ```
 
-The binary is named `tide`. To install the agent skill document into detected
-OpenCode / Claude Code skill directories:
+The binary is named `tide`. To install the agent skill document into the
+cross-tool `~/.agents/skills/tide/` directory:
 
 ```bash
 tide install-skill
@@ -43,7 +43,7 @@ tide sync                 # detect, secret-gate, commit, push
 | `tide scan` | Full secret scan over staged content (prefixes + entropy + regex + gitleaks/trufflehog if present) | **0** clean; **2** findings / bad config |
 | `tide sync` | Copy → stage → secret gate → commit → `pull --rebase -X theirs` → push (if `auto_push`) | **0** ok/nothing; **2** secret block / bad config; 1 unexpected |
 | `tide doctor` | Report binary, repo, origin, credentials, watches, external scanners | 0 ok; non-zero on blocker |
-| `tide install-skill` | Install embedded `SKILL.md` into agent skill dirs (`--agent claude\|opencode\|all`) | 0 ok |
+| `tide install-skill` | Install embedded `SKILL.md` into `~/.agents/skills/tide/` | 0 ok |
 
 Exit codes: **0** success / no-op / clean; **2** scan findings, secret block, or user-fixable config error; **1** unexpected failure.
 
@@ -83,7 +83,7 @@ one leading `.` from each path segment.
 ## Agent usage
 
 Coding agents should follow `skill/SKILL.md` (edit → `tide diff` review → `tide scan`
-→ only then `tide sync`). Install it into local agent skill dirs with:
+→ only then `tide sync`). Install it into `~/.agents/skills/tide/` with:
 
 ```bash
 tide install-skill

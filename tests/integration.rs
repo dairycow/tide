@@ -380,10 +380,10 @@ fn install_skill_works_without_config() {
         "precondition: no tide.toml should exist"
     );
 
-    let out = tide(&bin, &th.home, &["install-skill", "opencode"]);
+    let out = tide(&bin, &th.home, &["install-skill"]);
     assert_exit(&out, 0, "tide install-skill without config");
 
-    let skill = th.home.join(".config/opencode/skills/tide/SKILL.md");
+    let skill = th.home.join(".agents/skills/tide/SKILL.md");
     assert!(
         skill.is_file(),
         "SKILL.md should be written at {}\nstdout:\n{}\nstderr:\n{}",
