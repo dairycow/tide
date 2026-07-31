@@ -25,7 +25,7 @@ Requires Rust **1.88+** (edition 2024; uses let-chains).
 ## Quick start
 
 ```bash
-tide init                 # config + repo + remote prompt
+tide init                 # config + repo + remote prompt (prefilled from gh if installed)
 tide add ~/.bashrc        # watch a home file
 # edit ~/.bashrc …
 tide sync                 # detect, secret-gate, commit, push
@@ -35,7 +35,7 @@ tide sync                 # detect, secret-gate, commit, push
 
 | Command | Behavior | Exit |
 |---|---|---|
-| `tide init` | Write `~/.config/tide/tide.toml`, `git init` the repo, set `origin` | 0 ok; 1 unexpected |
+| `tide init` | Write `~/.config/tide/tide.toml`, `git init` the repo, set `origin`. Remote prompt is prefilled from `gh` (authed user + cwd basename, gh's protocol); offers to create a private GitHub repo (opt-in). Missing/unauthed `gh` is ignored. | 0 ok; 1 unexpected |
 | `tide add <path>` | Register a home path, copy into repo, append to watch list | 0 ok; 1 unexpected; 2 no config |
 | `tide rm <path>` | Unregister a path (home file + repo copy left as-is) | 0 ok; 1 unexpected; 2 no config |
 | `tide list` | Print watched `source -> target` mappings | 0 ok; 2 no config |

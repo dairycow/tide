@@ -6,7 +6,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -396,5 +396,84 @@ fn install_skill_works_without_config() {
     assert!(
         body.contains("# tide"),
         "installed SKILL.md should contain the tide skill header, got:\n{body}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test D — init works without an authenticated gh (inference is non-fatal,
+// never hangs on the prompt, never makes gh a hard requirement)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn init_works_without_gh() {
+    // Hermetic regardless of the HOST's gh state: a stub `gh` is prepended to
+    // PATH and always exits non-zero, so inference is skipped. stdin is null
+    // so the remote prompt sees EOF (and cannot hang).
+    let th = TempHome::new();
+    let bin = tide_bin();
+    assert!(bin.is_file(), "tide binary missing at {}", bin.display());
+
+    // Stub gh that always fails (unauthenticated / error).
+    let bin_dir = th.root.join("fakebin");
+    fs::create_dir_all(&bin_dir).expect("create fakebin");
+    let gh_stub = bin_dir.join("gh");
+    fs::write(&gh_stub, "#!/bin/sh\nexit 1\n").expect("write gh stub");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&gh_stub).expect("stat gh stub").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&gh_stub, perms).expect("chmod gh stub");
+    }
+
+    let path = format!(
+        "{}:{}",
+        bin_dir.to_string_lossy(),
+        std::env::var_os("PATH")
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    );
+
+    let out = Command::new(&bin)
+        .args(["init"])
+        .stdin(Stdio::null())
+        .env("HOME", &th.home)
+        .env("XDG_CONFIG_HOME", th.home.join(".config"))
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "tide-test")
+        .env("GIT_AUTHOR_EMAIL", "tide-test@example.com")
+        .env("GIT_COMMITTER_NAME", "tide-test")
+        .env("GIT_COMMITTER_EMAIL", "tide-test@example.com")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("PATH", &path)
+        .output()
+        .expect("spawn tide init");
+
+    assert_exit(&out, 0, "tide init without gh");
+
+    let cfg_path = th.home.join(".config/tide/tide.toml");
+    assert!(
+        cfg_path.is_file(),
+        "tide init should write config at {}",
+        cfg_path.display()
+    );
+
+    let body = fs::read_to_string(&cfg_path).expect("read tide.toml");
+    assert!(
+        body.contains("repo_path"),
+        "config should contain repo_path, got:\n{body}"
+    );
+    // No remote was inferred or entered (empty stdin, no gh default).
+    assert!(
+        !body.contains("github.com"),
+        "no remote should be inferred without gh, got:\n{body}"
+    );
+
+    let repo = th.home.join(".local/share/tide/repo");
+    assert!(
+        repo.join(".git").exists(),
+        "git repo should be initialized at {}",
+        repo.display()
     );
 }

@@ -40,7 +40,8 @@ Also when they say "sync/push my dotfiles" or invoke /tide.
 
 Run `tide doctor`. If it reports problems:
 - missing repo/config -> `tide init` (creates ~/.config/tide/tide.toml + git repo,
-  prompts for the remote, offers to adopt common dotfiles)
+  prompts for the remote — prefilled from the `gh` CLI if installed, and offers to
+  create a private GitHub repo; both optional and skipped silently without `gh`)
 - a file isn't being tracked -> `tide add <path>`
 
 ## Commands

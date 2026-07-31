@@ -165,20 +165,169 @@ fn path_to_source_string(path: &Path) -> String {
     }
 }
 
-fn prompt_remote() -> String {
-    eprint!("Remote URL (origin) [empty to skip]: ");
+// ---------------------------------------------------------------------------
+// Remote-URL inference (gh CLI) — every path is non-fatal.
+// ---------------------------------------------------------------------------
+
+/// Build a GitHub remote URL for the given owner/repo.
+fn build_remote_url(owner: &str, repo: &str, ssh: bool) -> String {
+    if ssh {
+        format!("git@github.com:{owner}/{repo}.git")
+    } else {
+        format!("https://github.com/{owner}/{repo}.git")
+    }
+}
+
+/// Parse a github.com remote URL (SSH or HTTPS) into `(owner, repo)`.
+/// Returns `None` for non-github hosts or anything unparseable; strips a
+/// trailing `.git`. Gates the `gh repo create` offer.
+fn github_owner_repo(url: &str) -> Option<(String, String)> {
+    let url = url.trim();
+    let rest = url
+        .strip_prefix("git@github.com:")
+        .or_else(|| url.strip_prefix("ssh://git@github.com/"))
+        .or_else(|| url.strip_prefix("https://github.com/"))
+        .or_else(|| url.strip_prefix("http://github.com/"))?;
+    split_owner_repo(rest)
+}
+
+fn split_owner_repo(s: &str) -> Option<(String, String)> {
+    // Drop trailing `.git` / slashes and any query/fragment.
+    let s = s.trim_end_matches(".git").trim_end_matches('/');
+    let s = s.split(['?', '#']).next().unwrap_or(s);
+    let mut it = s.splitn(2, '/');
+    let owner = it.next()?.trim();
+    let repo = it.next()?.trim();
+    if owner.is_empty() || repo.is_empty() || repo.contains('/') {
+        return None;
+    }
+    Some((owner.to_string(), repo.to_string()))
+}
+
+/// Infer the repo name from the current working directory's basename
+/// (matches `gh repo create`'s default). `None` at filesystem root.
+fn repo_name_from_cwd() -> Option<String> {
+    let cwd = std::env::current_dir().ok()?;
+    let name = cwd.file_name()?;
+    let s = name.to_string_lossy();
+    (!s.is_empty()).then(|| s.into_owned())
+}
+
+/// Is a binary on PATH? (Pure PATH scan, never spawns — safe to probe.)
+fn binary_on_path(name: &str) -> bool {
+    let Some(paths) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&paths).any(|dir| dir.join(name).is_file())
+}
+
+/// Run `gh <args>` and return trimmed stdout. `None` if gh is missing, the
+/// call fails, exits non-zero, or yields empty output.
+fn gh_capture(args: &[&str]) -> Option<String> {
+    if !binary_on_path("gh") {
+        return None;
+    }
+    let output = Command::new("gh").args(args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!s.is_empty()).then_some(s)
+}
+
+/// Authenticated gh user (`gh api user --jq .login`), or `None` if gh is
+/// absent / unauthenticated.
+fn gh_owner() -> Option<String> {
+    gh_capture(&["api", "user", "--jq", ".login"])
+}
+
+/// gh's configured git protocol is SSH? Falls back to false (HTTPS).
+fn gh_protocol_is_ssh() -> bool {
+    gh_capture(&["config", "get", "git_protocol"]).is_some_and(|p| p.trim() == "ssh")
+}
+
+/// Create a private GitHub repo. Non-fatal: warns and continues on any error
+/// (e.g. the repo already exists).
+fn create_github_repo(owner: &str, repo: &str) {
+    let name = format!("{owner}/{repo}");
+    match Command::new("gh")
+        .args(["repo", "create", &name, "--private"])
+        .status()
+    {
+        Ok(status) if status.success() => println!("created private repo {name}"),
+        Ok(status) => eprintln!(
+            "warning: gh repo create exited {status} (repo may already exist); continuing"
+        ),
+        Err(e) => eprintln!("warning: could not run gh repo create ({e}); continuing"),
+    }
+}
+
+fn prompt_remote(default: &str) -> String {
+    if default.is_empty() {
+        eprint!("Remote URL (origin) [empty to skip]: ");
+    } else {
+        eprint!("Remote URL (origin) [{default}] (enter to accept): ");
+    }
     let _ = io::stderr().flush();
     let mut line = String::new();
     match io::stdin().read_line(&mut line) {
-        Ok(0) | Err(_) => String::new(),
-        Ok(_) => line.trim().to_string(),
+        Ok(0) | Err(_) => default.to_string(),
+        Ok(_) => {
+            let t = line.trim();
+            if t.is_empty() {
+                default.to_string()
+            } else {
+                t.to_string()
+            }
+        }
+    }
+}
+
+/// Yes/no prompt. Returns `default_yes` on empty input / EOF.
+fn prompt_yes_no(prompt: &str, default_yes: bool) -> bool {
+    let hint = if default_yes { "[Y/n]" } else { "[y/N]" };
+    eprint!("{prompt} {hint}: ");
+    let _ = io::stderr().flush();
+    let mut line = String::new();
+    match io::stdin().read_line(&mut line) {
+        Ok(0) | Err(_) => default_yes,
+        Ok(_) => {
+            let t = line.trim().to_ascii_lowercase();
+            if t.is_empty() {
+                default_yes
+            } else {
+                t == "y" || t == "yes"
+            }
+        }
     }
 }
 
 pub fn cmd_init(remote: Option<String>) -> Result<()> {
     let remote = match remote {
         Some(r) => r,
-        None => prompt_remote(),
+        None => {
+            // Prefill the remote from the gh CLI when available: the
+            // authenticated user as owner, cwd basename as repo, gh's
+            // configured protocol.
+            let owner = gh_owner();
+            let default = match (&owner, repo_name_from_cwd()) {
+                (Some(o), Some(r)) => Some(build_remote_url(o, &r, gh_protocol_is_ssh())),
+                _ => None,
+            };
+            let remote = prompt_remote(&default.unwrap_or_default());
+
+            // Offer to create the repo on GitHub (opt-in; only when gh is
+            // authenticated and the URL points at github.com).
+            if !remote.is_empty()
+                && owner.is_some()
+                && let Some((o, r)) = github_owner_repo(&remote)
+                && prompt_yes_no(&format!("Create {o}/{r} as a private GitHub repo?"), false)
+            {
+                create_github_repo(&o, &r);
+            }
+
+            remote
+        }
     };
 
     let cfg = Config {
@@ -311,5 +460,62 @@ mod tests {
     #[test]
     fn map_target_tmux() {
         assert_eq!(map_target("~/.tmux.conf"), "tmux.conf");
+    }
+
+    #[test]
+    fn build_remote_url_ssh_and_https() {
+        assert_eq!(
+            build_remote_url("alice", "dotfiles", true),
+            "git@github.com:alice/dotfiles.git"
+        );
+        assert_eq!(
+            build_remote_url("alice", "dotfiles", false),
+            "https://github.com/alice/dotfiles.git"
+        );
+    }
+
+    #[test]
+    fn github_owner_repo_ssh_forms() {
+        let expected = Some(("alice".to_string(), "dotfiles".to_string()));
+        assert_eq!(
+            github_owner_repo("git@github.com:alice/dotfiles.git"),
+            expected
+        );
+        assert_eq!(github_owner_repo("git@github.com:alice/dotfiles"), expected);
+        assert_eq!(
+            github_owner_repo("ssh://git@github.com/alice/dotfiles.git"),
+            expected
+        );
+    }
+
+    #[test]
+    fn github_owner_repo_https_form() {
+        assert_eq!(
+            github_owner_repo("https://github.com/alice/dotfiles.git"),
+            Some(("alice".to_string(), "dotfiles".to_string()))
+        );
+    }
+
+    #[test]
+    fn github_owner_repo_rejects_non_github_and_garbage() {
+        // Non-github hosts.
+        assert_eq!(github_owner_repo("git@gitlab.com:alice/dotfiles.git"), None);
+        assert_eq!(
+            github_owner_repo("https://example.com/alice/dotfiles"),
+            None
+        );
+        // Malformed / incomplete.
+        assert_eq!(github_owner_repo(""), None);
+        assert_eq!(github_owner_repo("not a url"), None);
+        assert_eq!(github_owner_repo("https://github.com/onlyone"), None);
+        assert_eq!(github_owner_repo("https://github.com/a/b/c"), None);
+    }
+
+    #[test]
+    fn repo_name_from_cwd_is_some() {
+        // cargo test's cwd is the package root; it has a basename.
+        let name = repo_name_from_cwd();
+        assert!(name.is_some(), "cwd should have a basename");
+        assert!(!name.unwrap().is_empty());
     }
 }

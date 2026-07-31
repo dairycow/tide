@@ -29,7 +29,7 @@ chezmoi, no background service.** One-shot.
 
 | Command | Behavior |
 |---|---|
-| `tide init` | Create `~/.config/tide/tide.toml` + `git init` the repo. Prompt for remote URL (`origin`). Offer to adopt common dotfiles (`chezmoi`-free: just `tide add` each). |
+| `tide init` | Create `~/.config/tide/tide.toml` + `git init` the repo. Prompt for remote URL (`origin`), prefilled from the `gh` CLI when available (authenticated user as owner, current directory basename as repo, gh's configured protocol); press enter to accept. If gh is authenticated and the URL points at github.com, offer to create a private repo there (opt-in). All gh inference is non-fatal — missing/unauthenticated `gh` falls back to an empty prompt. Offer to adopt common dotfiles (`chezmoi`-free: just `tide add` each). |
 | `tide add <path>` | Register a home path as watched. Copy it into the repo now (compute `target`). Append to watch list in config. |
 | `tide rm <path>` | Unregister a path (leave the home file and the repo copy as-is). |
 | `tide list` | Print watched `source -> target` mappings. |
