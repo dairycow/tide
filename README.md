@@ -20,6 +20,8 @@ OpenCode / Claude Code skill directories:
 tide install-skill
 ```
 
+Requires Rust **1.85+** (edition 2024).
+
 ## Quick start
 
 ```bash
@@ -86,3 +88,9 @@ Coding agents should follow `skill/SKILL.md` (edit → `tide diff` review → `t
 ```bash
 tide install-skill
 ```
+
+## License
+
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your
+option. Contributions intentionally submitted for inclusion must be dual-licensed
+under the same terms.

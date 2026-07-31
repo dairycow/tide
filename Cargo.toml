@@ -2,6 +2,15 @@
 name = "tide"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+authors = ["Harry Fleming"]
+license = "MIT OR Apache-2.0"
+description = "One-shot dotfile sync CLI — copy, commit, and push watched dotfiles to your own git repo"
+homepage = "https://github.com/dairycow/tide"
+repository = "https://github.com/dairycow/tide"
+readme = "README.md"
+keywords = ["dotfiles", "dotfile", "cli", "sync", "git"]
+categories = ["command-line-utilities", "config"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
