@@ -31,9 +31,9 @@ CI runs the same. Never weaken a test or gate to make a number pass.
 
 - **One logical change per commit.** Keep commits focused and reviewable.
 - **Commit messages** are imperative, e.g. `scan: add glpat- prefix detection`.
-- **Secrets:** never commit a real credential. The repo's own scan engine
-  (`tide scan`) exists for exactly this — if you add example secrets in tests,
-  mark them obviously (e.g. `EXAMPLE_NOT_REAL`).
+- **Secrets:** never commit a real credential. The repo's own scan engine (run
+  via `tide sync`'s gate) exists for exactly this — if you add example secrets
+  in tests, mark them obviously (e.g. `EXAMPLE_NOT_REAL`).
 - **Command surface:** do not add new subcommands without first updating
   `docs/DECISIONS.md`. The surface is intentionally small.
 - **Tests:** add unit tests under the relevant module's `#[cfg(test)]` block and,

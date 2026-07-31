@@ -10,19 +10,19 @@ Only the latest release line receives security fixes.
 
 | Version | Supported |
 | ------- | --------- |
-| 0.1.x   | yes       |
+| 0.4.x   | yes       |
 
-## Secret defense (built-in, 4 layers)
+## Secret defense (built-in, 3 layers)
 
 1. **Semantic review of `tide diff`** — human/agent judgment before anything is pushed.
-2. **`tide scan`** — known key prefixes (`AKIA`, `ghp_/gho_/ghs_`, `sk-`, `xox[bpoa]-`,
+2. **`tide sync` full gate** — known key prefixes (`AKIA`, `ghp_/gho_/ghs_`, `sk-`, `xox[bpoa]-`,
    `glpat-`, `AIza`, `eyJ`, PEM private keys), Shannon-entropy detection, configured
-   regex patterns, and external scanners (`gitleaks` / `trufflehog`) when installed.
-3. **`tide sync` internal gate** — a fast regex gate runs on staged content as the
-   last step before push; on a hit it unstages, aborts, and **pushes nothing** (exit 2).
-4. **Conflict policy** — `git pull --rebase -X theirs` so local changes win on conflict.
+   regex patterns, and external scanners (`gitleaks` / `trufflehog`) when installed. On a
+   hit it unstages, aborts, and **pushes nothing** (exit 2). (This is the former
+   `tide scan`, folded into `sync` in v0.4.0.)
+3. **Conflict policy** — `git pull --rebase -X theirs` so local changes win on conflict.
 
-Snippets in scan output are truncated and redacted. **Never bypass a finding** — move
+Snippets in sync/scan output are truncated and redacted. **Never bypass a finding** — move
 the secret to an environment variable or a non-watched file instead.
 
 ## Reporting a vulnerability
