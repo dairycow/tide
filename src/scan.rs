@@ -651,34 +651,14 @@ pub fn scan_text(text: &str, file_label: &str, cfg: &Config, external: bool) -> 
 
 /// Validate every `secret_patterns` entry by compiling it. On any invalid
 /// pattern, print a hard error to stderr and exit 2 so a broken config cannot
-/// silently weaken detection (e.g. during `tide sync` / `tide scan`).
-fn validate_secret_patterns_or_exit(patterns: &[String]) {
+/// silently weaken detection (e.g. during `tide sync`).
+pub(crate) fn validate_secret_patterns_or_exit(patterns: &[String]) {
     for (index, pattern) in patterns.iter().enumerate() {
         if let Err(e) = Regex::new(pattern) {
             eprintln!("error: invalid secret_patterns entry {index}: {pattern:?}: {e}");
             std::process::exit(2);
         }
     }
-}
-
-/// `tide scan` CLI handler (called by main).
-pub fn run(cfg: &Config) -> anyhow::Result<()> {
-    // Hard-fail broken regex config before scanning (never silently drop).
-    validate_secret_patterns_or_exit(&cfg.secret_patterns);
-
-    let repo = repo::repo_path(cfg);
-    repo::copy_watched_into_repo(cfg)?;
-    repo::add_all(&repo)?;
-    let diff = repo::staged_diff(&repo)?;
-    let findings = scan_text(&diff, "staged", cfg, true);
-    if findings.is_empty() {
-        println!("clean");
-        return Ok(());
-    }
-    for f in &findings {
-        println!("{}:{} {}: {}", f.file, f.line, f.kind, f.snippet);
-    }
-    std::process::exit(2);
 }
 
 // ---------------------------------------------------------------------------

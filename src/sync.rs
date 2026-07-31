@@ -1,7 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use regex::Regex;
-
 use crate::config::Config;
 use crate::repo;
 use crate::scan;
@@ -10,12 +8,7 @@ pub fn run(cfg: &Config) -> anyhow::Result<()> {
     let repo = repo::repo_path(cfg);
 
     // 0. Validate config regex FIRST — never silently weaken detection.
-    for (index, pattern) in cfg.secret_patterns.iter().enumerate() {
-        if let Err(e) = Regex::new(pattern) {
-            eprintln!("error: invalid secret_patterns entry {index}: {pattern:?}: {e}");
-            std::process::exit(2);
-        }
-    }
+    scan::validate_secret_patterns_or_exit(&cfg.secret_patterns);
 
     // 1. Copy watched home files into the repo + stage.
     repo::copy_watched_into_repo(cfg)?;
@@ -27,9 +20,11 @@ pub fn run(cfg: &Config) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // 3. SECRET GATE — built-in engine; no external scanners.
+    // 3. SECRET GATE — full engine: prefixes + entropy + regex, plus external
+    //    scanners (gitleaks/trufflehog) when on PATH. This absorbs the former
+    //    `tide scan` so a separate scan command is no longer needed.
     let diff = repo::staged_diff(&repo)?;
-    let findings = scan::scan_text(&diff, "staged", cfg, false);
+    let findings = scan::scan_text(&diff, "staged", cfg, true);
     if !findings.is_empty() {
         for f in &findings {
             eprintln!("BLOCKED {}: {}:{} {}", f.kind, f.file, f.line, f.snippet);
