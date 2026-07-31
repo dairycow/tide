@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-31
+
+### Changed (BREAKING)
+
+- **`tide scan` removed.** Its full secret-detection engine (known key prefixes
+  + Shannon entropy + config regex, plus `gitleaks`/`trufflehog` when on PATH)
+  now runs automatically as `tide sync`'s gate. `tide sync` still blocks on any
+  finding — exit 2, index reset, **nothing pushed** — exactly as `scan` did. Use
+  `tide sync` wherever you used `tide scan`.
+- `tide init` default remote is now `<owner>/dotfiles` (was the current-directory
+  basename, which collided with the tool's own source repo when run inside it).
+- `tide init` is now **idempotent**: re-running it preserves existing watches and
+  tuned config (only the remote is updated), and `origin` is set-or-updated
+  instead of failing on a second run.
+
+### Added
+
+- `tide init` **detects common dotfiles** under `$HOME` and offers to adopt them
+  (`Add all? [y/N]`, default no — safe for non-interactive/agent runs). The
+  suggestion list is a conservative file allowlist; secret-bearing entries
+  (`.ssh`, `.aws`, `.gnupg`, `.kube`, `.docker`, `.netrc`, `.npmrc`, `.env*`,
+  `.pypirc`) are never suggested.
+
 ## [0.3.0] - 2026-07-31
 
 ### Added
