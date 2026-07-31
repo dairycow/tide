@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-31
+
+### Added
+
+- `tide init` now prefills the remote prompt from the `gh` CLI when available
+  (authenticated user as owner, current directory basename as repo, gh's
+  configured protocol); press enter to accept. If gh is authenticated and the
+  URL points at github.com, it offers to create a private repo there (opt-in).
+  Missing or unauthenticated `gh` is ignored — no new hard dependency.
+
 ## [0.2.0] - 2026-07-31
 
 ### Changed
@@ -36,6 +46,7 @@ Initial public release.
 - Dual MIT / Apache-2.0 license.
 - CI (format check, clippy with `-D warnings`, test matrix).
 
-[Unreleased]: https://github.com/dairycow/tide/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/dairycow/tide/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/dairycow/tide/releases/tag/v0.3.0
 [0.2.0]: https://github.com/dairycow/tide/releases/tag/v0.2.0
 [0.1.0]: https://github.com/dairycow/tide/releases/tag/v0.1.0
