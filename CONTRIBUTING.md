@@ -7,7 +7,7 @@ to the command surface or config schema.
 
 ## Development setup
 
-Requires **Rust 1.85+** (edition 2024) and `git` on your PATH.
+Requires **Rust 1.88+** (edition 2024; uses let-chains) and `git` on your PATH.
 
 ```bash
 git clone https://github.com/dairycow/tide.git

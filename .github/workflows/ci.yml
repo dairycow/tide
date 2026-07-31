@@ -19,7 +19,7 @@ jobs:
         rust: [stable]
         include:
           - os: ubuntu-latest
-            rust: "1.85" # MSRV (edition 2024)
+            rust: "1.88" # MSRV (edition 2024 + let-chains)
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
