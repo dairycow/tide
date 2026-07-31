@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-01
+
+### Changed
+
+- `tide help` / `--help` now shows a one-line description for each command, plus
+  the typical `init → add → diff → sync` flow at the foot of the help text.
+- `tide list` now prints watched dotfile paths, one per line (was
+  `source -> target`).
+- `tide doctor` now prints the actual `origin` URL instead of just `set`
+  (the fail lines are unchanged).
+
 ## [0.4.0] - 2026-07-31
 
 ### Changed (BREAKING)
