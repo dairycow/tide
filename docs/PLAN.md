@@ -24,41 +24,44 @@ Tick a box `[ ]` → `[x]` in the SAME commit that completes its task.
 - GATE: `cargo build --release && cargo test` green. Commit: `phase 1: scaffold`.
 
 ### Phase 2 — parallel batch (disjoint files)  — branch off integration
-- [ ] **repo** (`src/repo.rs`): `resolve_repo`, `copy_home_to_repo`,
-      `git(cmd, args)` shell-out helper running in `repo_path`, `add_all`,
-      `staged_diff_quiet`, `staged_diff`, `commit`, `fetch`, `pull_rebase_theirs`,
-      `push`, `head_short_sha`. Errors via `thiserror`. Never panics.
-      Commit: `phase 2: repo — git shell-out + copy`.
-- [ ] **scan** (`src/scan.rs`): `Finding { file, line, kind, snippet }`,
-      `scan(repo_path, &Config, full: bool) -> Vec<Finding>`. Prefixes + entropy
-      (hand-rolled Shannon) + regex. `full=true` also dispatches to
-      `gitleaks`/`trufflehog` if present (probe PATH once, cache). `sync` calls
-      with `full=false` (regex only). Print helper + exit-code helper (0/2).
-      Commit: `phase 2: scan — secret detection engine`.
-- [ ] **install** (`src/install.rs` + `skill/SKILL.md`): full SKILL.md content
-      (per DECISIONS + the agent flow w/ 4-layer review). `install-skill`
-      detects `~/.claude`, `~/.config/opencode`, `~/.agents` and writes
-      `<dir>/skills/tide/SKILL.md` for each found (or `--agent` filter). Uses
-      `include_str!("../skill/SKILL.md")`. Commit: `phase 2: install — SKILL.md`.
+- [x] **repo** (`src/repo.rs`): git shell-out + copy layer (12 public fns);
+      hardened against path-traversal targets after reviewer FIX_FIRST.
+      Commit: `phase 2: repo — git shell-out + copy` + `… harden target path validation`.
+- [x] **scan** (`src/scan.rs`): `Finding` + `scan_text`; prefixes + entropy
+      (Shannon) + regex + external (gitleaks/trufflehog if present); hardened
+      after reviewer FIX_FIRST (no panic on bad config, invalid patterns
+      hard-error in run(), sk-proj/sk-ant, full short-secret masking).
+      Commit: `phase 2: scan — secret detection engine` + `… harden config handling and redaction`.
+- [x] **install** (`src/install.rs` + `skill/SKILL.md`): full SKILL.md (4-layer
+      flow) + `install-skill` writing to `~/.claude` / `~/.config/opencode` /
+      `~/.agents` skill dirs. Commit: `phase 2: install — SKILL.md`.
 
-### Phase 3 — parallel batch (disjoint files)  — branch off integration
-- [ ] **diff** (`src/diff.rs`): copy watched → repo, `git add -A`, print
-      `git diff --cached`. Exit 0. No commit/push. Commit: `phase 3: diff`.
-- [ ] **doctor** (`src/doctor.rs`): run all checks; print status table; exit
-      non-zero on blocker. Commit: `phase 3: doctor`.
+### Phase 3 — (diff sequential after scan; doctor parallel) — branch off integration
+- [x] **diff** (`src/diff.rs`): copy → add → print staged diff, no commit/push.
+      Commit: `phase 3: diff`.
+- [x] **doctor** (`src/doctor.rs`): 7 checks + blocker exit semantics.
+      Commit: `phase 2: doctor`.
 
 ### Phase 4 — sequential  — branch off integration
-- [ ] **sync** (`src/sync.rs`): the core flow (copy → add → quiet-check → regex
-      gate → commit → fetch → pull --rebase -X theirs → push). Prints the result
-      line; exit codes per DECISIONS. Commit: `phase 4: sync`.
+- [x] **sync** (`src/sync.rs`): copy → add → quiet-check → secret gate
+      (prefix+entropy+regex, external=false) → commit → fetch →
+      pull --rebase -X theirs → push (best-effort); reviewer PROCEED, no findings.
+      Commit: `phase 4: sync`.
 
 ### Phase 5 — docs + tests  — branch off integration
-- [ ] `README.md`: what/install/usage/config/secret model.
-- [ ] `tests/integration.rs`: temp `HOME`, temp bare git remote, `tide init`,
-      `tide add ~/.bashrc`, edit it, `tide scan` clean, `tide sync`, assert a
-      commit exists and the bare remote received it; plus a secret-in-file case
-      asserting `tide scan` exits 2 and `tide sync` refuses.
-- [ ] GATE green. Commit: `phase 5: docs + tests`.
+- [x] `README.md`: what/install/usage/config/secret model.
+- [x] `tests/integration.rs`: happy-path push to a local bare remote + secret
+      block refusing push (2 e2e tests, passing).
+- [x] GATE green. Commit: `phase 5: docs + tests`.
+
+## Completion
+
+All phases done on `tide-impl`. Final gate: `cargo build --release` + `cargo
+test` (15 tests) + `cargo clippy --all-targets -- -D warnings` all GREEN.
+Orchestrator end-to-end smoke against a throwaway HOME + local bare remote
+confirmed: clean sync pushes to remote; a `ghp_` secret is blocked (scan & sync
+exit 2) and never pushed. Known minor follow-up: a malformed `tide.toml` is
+reported redundantly and exits 1 (not 2); non-blocking.
 
 ## Status legend
 `[ ]` pending · `[~]` in progress · `[x]` done (committed, gate green)
