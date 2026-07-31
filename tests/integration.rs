@@ -250,6 +250,16 @@ fn happy_path_sync_pushes_to_remote() {
         "remote bashrc should contain EDITOR=nvim, got:\n{content}"
     );
 
+    // 7. tide doctor reports the actual origin URL (not just "set").
+    let out = tide(&bin, &fx.home, &["doctor"]);
+    assert_exit(&out, 0, "tide doctor");
+    let doc = stdout_str(&out);
+    let bare_s = fx.bare.to_string_lossy();
+    assert!(
+        doc.contains(bare_s.as_ref()),
+        "doctor should print the origin URL, got:\n{doc}"
+    );
+
     // Keep fx alive until end (Drop cleans up).
     let _ = fx.repo;
 }

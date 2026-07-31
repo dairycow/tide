@@ -35,12 +35,14 @@ pub fn run(cfg: &Config) -> anyhow::Result<()> {
         blockers += 1;
     }
 
-    // 4. origin remote
-    if repo_ok && repo::has_origin(&repo) {
-        println!("ok     origin remote     set");
-    } else if repo_ok {
-        println!("fail   origin remote     not set (cannot push)");
-        blockers += 1;
+    // 4. origin remote (show the actual URL — the source of truth for pushes)
+    if repo_ok {
+        if let Some(url) = repo::origin_url(&repo) {
+            println!("ok     origin remote     {url}");
+        } else {
+            println!("fail   origin remote     not set (cannot push)");
+            blockers += 1;
+        }
     } else {
         println!("fail   origin remote     unavailable (no git repo)");
         blockers += 1;

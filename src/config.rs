@@ -534,7 +534,7 @@ pub fn cmd_list() -> Result<()> {
         return Ok(());
     }
     for w in &cfg.watches {
-        println!("{} -> {}", w.source, w.target);
+        println!("{}", w.source);
     }
     Ok(())
 }

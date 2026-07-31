@@ -32,10 +32,10 @@ chezmoi, no background service.** One-shot.
 | `tide init` | Create/merge `~/.config/tide/tide.toml` + `git init` the repo (**idempotent**: preserves existing watches/config; only re-sets the remote; `origin` is set-or-updated). Prompt for remote URL (`origin`), prefilled from the `gh` CLI as `<owner>/dotfiles` (tide is a dotfile tool — the cwd basename collided with the tool's own source repo when run inside it; gh's configured protocol); press enter to accept. If gh is authenticated and the URL points at github.com, offer to create a private repo there (opt-in). All gh inference is non-fatal — missing/unauthenticated `gh` falls back to an empty prompt. Then **detect common dotfiles** under `$HOME` and offer to adopt them (`Add all? [y/N]`, default no; conservative allowlist + secret denylist; `chezmoi`-free: just `tide add` each). |
 | `tide add <path>` | Register a home path as watched. Copy it into the repo now (compute `target`). Append to watch list in config. |
 | `tide rm <path>` | Unregister a path (leave the home file and the repo copy as-is). |
-| `tide list` | Print watched `source -> target` mappings. |
+| `tide list` | Print watched dotfile paths (one per line). |
 | `tide diff` | Copy all watched home files → repo, `git add -A`, print `git diff --cached`. **NO commit, NO push.** |
 | `tide sync` | Copy all watched home files → repo. `git add -A`. If `git diff --cached --quiet` → "nothing to sync", stop (exit 0). Else run the **full secret gate** (prefixes + entropy + regex + external `gitleaks`/`trufflehog` if on PATH — the former `tide scan` engine, folded in as of v0.4.0); on hit → `git reset`, warn, abort (exit 2), **nothing pushed**. Else commit, fetch, `pull --rebase -X theirs`, push (if `auto_push`). Print machine-friendly result. |
-| `tide doctor` | Report: tide binary, repo exists + is git repo, `origin` set, ssh key / credential helper present, watched file count, whether `gitleaks`/`trufflehog` present. Exit non-zero if a blocker found. |
+| `tide doctor` | Report: tide binary, repo exists + is git repo, `origin` **URL**, ssh key / credential helper present, watched file count, whether `gitleaks`/`trufflehog` present. Exit non-zero if a blocker found. |
 | `tide install-skill` | Copy the embedded `SKILL.md` (`include_str!`) into `~/.agents/skills/tide/` — the cross-tool skill root. |
 
 `install-skill` targets only `~/.agents/` (read by opencode, Grok, Codex, Gemini).

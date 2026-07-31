@@ -180,6 +180,13 @@ pub fn has_origin(repo: &Path) -> bool {
     git(repo, &["remote", "get-url", "origin"]).is_ok()
 }
 
+/// The configured `origin` URL, or `None` if origin is unset / `git` fails.
+pub fn origin_url(repo: &Path) -> Option<String> {
+    let out = git(repo, &["remote", "get-url", "origin"]).ok()?;
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!s.is_empty()).then_some(s)
+}
+
 /// Unstage everything (`git -C <repo> reset`), keeping working-tree files. Used
 /// by sync to back out a secret-bearing staging before bailing.
 pub fn reset_index(repo: &Path) -> anyhow::Result<()> {
