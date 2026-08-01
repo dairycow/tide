@@ -39,7 +39,7 @@ tide sync                 # full secret-gate, commit, push
 | `tide init` | Write/merge `~/.config/tide/tide.toml`, `git init` the repo, set-or-update `origin` (**idempotent** — preserves existing watches/config). Remote prefilled from `gh` as `<you>/dotfiles`; offers to create a private GitHub repo (opt-in). Then detects common dotfiles under `$HOME` and offers to adopt them (`Add all? [y/N]`, default no). Missing/unauthed `gh` is ignored. | 0 ok; 1 unexpected |
 | `tide add <path>` | Register a home path, copy into repo, append to watch list | 0 ok; 1 unexpected; 2 no config |
 | `tide rm <path>` | Unregister a path (home file + repo copy left as-is) | 0 ok; 1 unexpected; 2 no config |
-| `tide list` | Print watched dotfiles (one path per line) | 0 ok; 2 no config |
+| `tide list` | Print git-tracked dotfiles as home paths, one per line | 0 ok; 2 no config |
 | `tide diff` | Copy watched → repo, stage, print `git diff --cached` (no commit/push) | 0 ok; 2 no config |
 | `tide sync` | Copy → stage → **full secret gate** (prefixes + entropy + regex + gitleaks/trufflehog if present) → commit → `pull --rebase -X theirs` → push (if `auto_push`). On a finding: unstages, aborts, **nothing pushed** (exit **2**). | **0** ok/nothing; **2** secret block / bad config; 1 unexpected |
 | `tide doctor` | Report binary, repo, origin URL, credentials, watches, external scanners | 0 ok; non-zero on blocker |
