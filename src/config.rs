@@ -529,12 +529,34 @@ pub fn cmd_list() -> Result<()> {
         bail!("no config found; run `tide init` first");
     }
     let cfg = load()?;
-    if cfg.watches.is_empty() {
-        println!("(no watches)");
+    let repo = expand_tilde(&cfg.repo_path);
+
+    // Source of truth is git: list the files tide's repo actually tracks.
+    let files = match crate::repo::tracked_files(&repo) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!(
+                "warning: could not list {} ({e:#}); run `tide init` first",
+                repo.display()
+            );
+            Vec::new()
+        }
+    };
+    if files.is_empty() {
+        println!("(no dotfiles tracked)");
         return Ok(());
     }
-    for w in &cfg.watches {
-        println!("{}", w.source);
+
+    // Map each repo-relative target back to its home source path when a watch
+    // records the mapping; otherwise show the repo path as-is (orphan/manual).
+    let by_target: std::collections::HashMap<&str, &str> = cfg
+        .watches
+        .iter()
+        .map(|w| (w.target.as_str(), w.source.as_str()))
+        .collect();
+    for f in &files {
+        let shown = by_target.get(f.as_str()).copied().unwrap_or(f.as_str());
+        println!("{shown}");
     }
     Ok(())
 }

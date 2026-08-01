@@ -149,6 +149,18 @@ pub fn status_porcelain(repo: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// Repo-relative paths of every file git tracks (`git ls-files`), in git's
+/// order. Empty if the repo has no tracked files yet (or isn't a git repo).
+pub fn tracked_files(repo: &Path) -> Result<Vec<String>> {
+    let output = git(repo, &["ls-files"]).context("git ls-files")?;
+    let files = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
+        .collect();
+    Ok(files)
+}
+
 pub fn commit(repo: &Path, msg: &str) -> Result<()> {
     git(repo, &["commit", "-m", msg, "--"]).context("git commit")?;
     Ok(())

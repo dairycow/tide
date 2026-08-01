@@ -260,6 +260,16 @@ fn happy_path_sync_pushes_to_remote() {
         "doctor should print the origin URL, got:\n{doc}"
     );
 
+    // 8. tide list reads from git: the synced bashrc is tracked and maps back
+    //    to its home source path.
+    let out = tide(&bin, &fx.home, &["list"]);
+    assert_exit(&out, 0, "tide list");
+    let list_out = stdout_str(&out);
+    assert!(
+        list_out.contains("~/.bashrc"),
+        "list should show the git-tracked bashrc as ~/.bashrc, got:\n{list_out}"
+    );
+
     // Keep fx alive until end (Drop cleans up).
     let _ = fx.repo;
 }
