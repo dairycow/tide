@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-01
+
+### Changed
+
+- `tide list` now reads from **git** — it prints the dotfiles tide's repo
+  actually tracks (`git ls-files`), mapped back to home source paths, one per
+  line. Previously it printed the configured watch list, which could drift from
+  reality. Source of truth is now the repo: a watched-but-unsynced (or
+  secret-blocked) file won't appear; a file left in the repo after `tide rm`
+  will.
+
 ## [0.5.0] - 2026-08-01
 
 ### Changed
